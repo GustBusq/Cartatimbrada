@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Relatórios LogTrack</title>
+    <!-- Inclui o Tailwind CSS para um estilo moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-xl mx-4 my-8">
+    <div class="flex items-center justify-center mb-6">
+        <svg class="w-12 h-12 text-blue-600 mr-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+        </svg>
+        <h1 class="text-4xl font-bold text-gray-800">LogTrack</h1>
+    </div>
+
+    <p class="text-center text-gray-600 mb-8">Gerador de relatórios automático</p>
+
+    <!-- Seção de Busca -->
+    <div id="search-section" class="space-y-4">
+        <label for="id_pesquisa" class="block text-gray-700 font-semibold">🔍 Digite o ID que deseja pesquisar:</label>
+        <input type="text" id="id_pesquisa" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: 12345">
+        <button id="search-button" class="w-full p-3 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-colors">
+            Buscar Viagem
+        </button>
+        <div id="status-message" class="text-center mt-4"></div>
+    </div>
+
+    <!-- Seção de Resultados (oculta inicialmente) -->
+    <div id="results-section" class="hidden mt-8 space-y-6">
+        <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Detalhes da Viagem</h2>
+        <div id="trip-details" class="text-gray-700 space-y-2">
+            <!-- Detalhes da viagem serão injetados aqui via JS -->
+        </div>
+
+        <h3 class="text-xl font-bold text-gray-800 pt-4">Itens Encontrados</h3>
+        <div id="items-list" class="space-y-3">
+            <!-- Checkboxes de itens serão injetados aqui -->
+        </div>
+
+        <button id="generate-button" class="w-full p-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-colors">
+            Gerar Documento(s)
+        </button>
+        <div id="generation-status" class="text-center mt-4"></div>
+    </div>
+
+</div>
+
+<script>
+    // Armazena os dados da viagem para serem usados na geração do documento
+    let tripData = null;
+
+    // Referências aos elementos HTML
+    const searchSection = document.getElementById('search-section');
+    const resultsSection = document.getElementById('results-section');
+    const searchInput = document.getElementById('id_pesquisa');
+    const searchButton = document.getElementById('search-button');
+    const statusMessage = document.getElementById('status-message');
+    const tripDetailsDiv = document.getElementById('trip-details');
+    const itemsListDiv = document.getElementById('items-list');
+    const generateButton = document.getElementById('generate-button');
+    const generationStatusDiv = document.getElementById('generation-status');
+
+    searchButton.addEventListener('click', async () => {
+        const id_pesquisa = searchInput.value.trim();
+        if (!id_pesquisa) {
+            statusMessage.textContent = '⚠️ Por favor, digite um ID de pesquisa.';
+            statusMessage.className = 'text-center mt-4 text-red-500 font-bold';
+            return;
+        }
+
+        statusMessage.textContent = '⏳ Buscando dados...';
+        statusMessage.className = 'text-center mt-4 text-blue-500 font-bold';
+
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ id: id_pesquisa })
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro na busca. ID não encontrado ou falha no servidor.');
+            }
+
+            const data = await response.json();
+            
+            if (data.success) {
+                statusMessage.textContent = '✅ Busca concluída!';
+                statusMessage.className = 'text-center mt-4 text-green-600 font-bold';
+                // Armazena os dados da viagem e dos veículos para a próxima etapa
+                tripData = data;
+                renderResults(data.trip, data.vehicles);
+            } else {
+                statusMessage.textContent = `❌ ${data.message || 'ID não encontrado ou erro na busca.'}`;
+                statusMessage.className = 'text-center mt-4 text-red-600 font-bold';
+                resultsSection.classList.add('hidden');
+            }
+        } catch (error) {
+            statusMessage.textContent = `❌ Erro: ${error.message}`;
+            statusMessage.className = 'text-center mt-4 text-red-600 font-bold';
+            resultsSection.classList.add('hidden');
+        }
+    });
+
+    generateButton.addEventListener('click', async () => {
+        const checkboxes = document.querySelectorAll('#items-list input[type="checkbox"]:checked');
+        const selectedItems = Array.from(checkboxes).map(cb => cb.value);
+
+        if (selectedItems.length === 0) {
+            generationStatusDiv.textContent = '⚠️ Selecione pelo menos um item para gerar o documento.';
+            generationStatusDiv.className = 'text-center mt-4 text-orange-500 font-bold';
+            return;
+        }
+
+        if (!tripData) {
+            generationStatusDiv.textContent = '⚠️ Nenhum dado de viagem disponível. Por favor, faça uma busca primeiro.';
+            generationStatusDiv.className = 'text-center mt-4 text-red-500 font-bold';
+            return;
+        }
+
+        generationStatusDiv.textContent = '⏳ Gerando documento(s)...';
+        generationStatusDiv.className = 'text-center mt-4 text-blue-500 font-bold';
+        
+        try {
+            // Envia os dados da viagem e dos veículos junto com os itens selecionados
+            const response = await fetch('http://127.0.0.1:5000/api/generate-document', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    items: selectedItems,
+                    trip: tripData.trip,
+                    vehicles: tripData.vehicles
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao gerar o documento.');
+            }
+            
+            // O servidor envia o arquivo diretamente, então o navegador irá fazer o download
+            generationStatusDiv.innerHTML = `
+                <div class="text-green-600 font-bold">✅ Documento(s) gerado(s) com sucesso!</div>
+                <p class="text-sm mt-2">O arquivo foi salvo na pasta "Downloads" do seu computador.</p>
+            `;
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `Relatorio_${tripData.trip.viagensLiberacaoId}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+        } catch (error) {
+            generationStatusDiv.textContent = `❌ Erro: ${error.message}`;
+            generationStatusDiv.className = 'text-center mt-4 text-red-600 font-bold';
+        }
+    });
+
+    function renderResults(trip, vehicles) {
+        // Limpa a seção
+        tripDetailsDiv.innerHTML = '';
+        itemsListDiv.innerHTML = '';
+        
+        // Mostra os detalhes da viagem
+        tripDetailsDiv.innerHTML = `
+            <p><span class="font-semibold">ID da Pesquisa:</span> ${trip.viagensLiberacaoId}</p>
+            <p><span class="font-semibold">Status:</span> ${trip.status}</p>
+            <p><span class="font-semibold">Cliente:</span> ${trip.cliente}</p>
+            <p><span class="font-semibold">Transportadora:</span> ${trip.transportadora}</p>
+        `;
+        
+        // Cria a lista de itens para seleção
+        const items = [];
+        if (trip.motorista) {
+            items.push({ label: `Motorista: ${trip.motorista}`, value: 'motorista' });
+        }
+        if (trip.veiculo) {
+            items.push({ label: `Placa: ${trip.veiculo}`, value: `placa:${trip.veiculo}` });
+        }
+        if (trip.reboque1) {
+            items.push({ label: `Reboque 1: ${trip.reboque1}`, value: `placa:${trip.reboque1}` });
+        }
+        if (trip.reboque2) {
+            items.push({ label: `Reboque 2: ${trip.reboque2}`, value: `placa:${trip.reboque2}` });
+        }
+        if (trip.reboque3) {
+            items.push({ label: `Reboque 3: ${trip.reboque3}`, value: `placa:${trip.reboque3}` });
+        }
+
+        items.forEach((item, index) => {
+            const checkboxDiv = document.createElement('div');
+            checkboxDiv.className = 'flex items-center space-x-2';
+            checkboxDiv.innerHTML = `
+                <input type="checkbox" id="item-${index}" value="${item.value}" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
+                <label for="item-${index}" class="text-gray-700">${item.label}</label>
+            `;
+            itemsListDiv.appendChild(checkboxDiv);
+        });
+
+        // Exibe a seção de resultados e oculta a de busca
+        resultsSection.classList.remove('hidden');
+        searchSection.classList.add('hidden');
+    }
+</script>
+
+</body>
+</html>
