@@ -6,24 +6,32 @@ import re
 import os
 import io
 from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS # Importa a extensão CORS
+from flask_cors import CORS
+from dotenv import load_dotenv # Importa a biblioteca dotenv
+from docx2pdf import convert
+
+# Carrega as variáveis de ambiente do arquivo .env
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app) # Habilita o CORS para todas as rotas
+CORS(app)
 
 # Configurações do servidor Flask
 app.config['DEBUG'] = True
-app.config['JSON_AS_ASCII'] = False # Permite caracteres especiais no JSON
+app.config['JSON_AS_ASCII'] = False
 
-# Credenciais e URLs da API (MANTIDAS AQUI NO BACK-END PARA SEGURANÇA)
+# Credenciais e URLs da API (agora lidas de variáveis de ambiente)
 login_url = 'https://jcrisco.com.br/logtrack/controllers/usuario_login.php'
 login_data = {
-    'usuario': '55032620858',
-    'senha': '280406'
+    'usuario': os.getenv('LOGTRACK_USER'),
+    'senha': os.getenv('LOGTRACK_PASS')
 }
 consulta_url = 'https://jcrisco.com.br/logtrack/controllers/consultaPesquisas.php'
 veiculo_lista_url = 'https://jcrisco.com.br/logtrack/controllers/veiculo_lista.php'
 veiculo_edita_url = 'https://jcrisco.com.br/logtrack/controllers/veiculo_edita.php'
+
+# O restante do seu código permanece o mesmo.
+# As rotas /api/search e /api/generate-document não precisam de alteração.
 
 # Rota para buscar os dados de uma viagem
 @app.route('/api/search', methods=['POST'])
@@ -39,7 +47,7 @@ def search_trip():
     session = requests.Session()
     try:
         login_response = session.post(login_url, data=login_data, timeout=10)
-        login_response.raise_for_status() # Lança um erro para status de resposta ruins (4xx ou 5xx)
+        login_response.raise_for_status()
         login_result = login_response.json()
     except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
         print(f"Erro no login ou na resposta da API: {e}")
@@ -212,7 +220,7 @@ def generate_document():
         docx_buffer.seek(0)
         
         # Envia o arquivo para o front-end
-        filename = f"Relatorio_{detalhes_da_viagem['viagensLiberacaoId']}.docx"
+        filename = f"Relatorio_{detalhes_da_viagem['viagensLiberacaoId']}.pdf"
         return send_file(docx_buffer, as_attachment=True, download_name=filename)
 
     except FileNotFoundError:
