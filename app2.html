@@ -40,11 +40,11 @@
     <div id="results-section" class="hidden mt-8 space-y-6">
         <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Detalhes da Pesquisa</h2>
         <div id="trip-details" class="text-gray-700 space-y-2">
-        </div>
+            </div>
 
         <h3 class="text-xl font-bold text-gray-800 pt-4">Itens Encontrados</h3>
         <div id="items-list" class="space-y-3">
-        </div>
+            </div>
 
         <button id="generate-button" class="w-full p-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-colors">
             Gerar Documento(s)
@@ -64,9 +64,6 @@
     const generateButton = document.getElementById('generate-button');
     const generationStatusDiv = document.getElementById('generation-status');
 
-    // Use a variável de ambiente fornecida pelo Render para a URL da API
-    const API_URL = window.location.origin;
-
     let availableItems = []; // Array para armazenar os itens e seus valores
 
     // Lógica para o botão de BUSCA
@@ -83,7 +80,7 @@
         resultsSection.classList.add('hidden');
 
         try {
-            const response = await fetch(`${API_URL}/search_data`, {
+            const response = await fetch('http://127.0.0.1:5000/search_data', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -127,7 +124,7 @@
         generationStatusDiv.className = 'text-center mt-4 text-blue-500 font-bold';
         
         try {
-            const response = await fetch(`${API_URL}/generate_docs`, {
+            const response = await fetch('http://127.0.0.1:5000/generate_docs', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

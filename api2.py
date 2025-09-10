@@ -6,17 +6,16 @@ import datetime
 from docxtpl import DocxTemplate
 import re
 import os
-from flask_cors import CORS
+import platform
 import subprocess
-import shutil
 
 app = Flask(__name__)
+
+from flask_cors import CORS
 CORS(app)
 
-# O Render irá criar este diretório se não existir.
-# home_dir = os.path.expanduser('~')
-# pasta_de_saida = os.path.join(home_dir, "Downloads", "cartas timbradas feitas")
-template_dir = 'carta_timbrada'
+home_dir = os.path.expanduser('~')
+pasta_de_saida = os.path.join(home_dir, "Downloads", "cartas timbradas feitas")
 
 def formatar_retorno(sucesso, msg):
     return {'success': sucesso, 'message': msg}
@@ -24,25 +23,15 @@ def formatar_retorno(sucesso, msg):
 def buscar_dados_viagem(id_pesquisa):
     session = requests.Session()
     login_url = 'https://jcrisco.com.br/logtrack/controllers/usuario_login.php'
-
-    # Lê as credenciais das variáveis de ambiente
-    usuario = os.environ.get('LOGTRACK_USUARIO')
-    senha = os.environ.get('LOGTRACK_SENHA')
-
-    if not usuario or not senha:
-        return None, "❌ Credenciais de login não configuradas nas variáveis de ambiente."
-
-    login_data = {'usuario': usuario, 'senha': senha}
+    login_data = {'usuario': '55032620858', 'senha': '280406'}
 
     try:
         login_response = session.post(login_url, data=login_data)
         login_result = login_response.json()
-    except Exception as e:
-        print(f"Erro ao tentar login ou resposta inválida: {e}")
+    except:
         return None, "❌ Erro ao tentar login ou resposta inválida."
 
     if not login_result.get('success'):
-        print(f"Erro no login: {login_result.get('msg', 'Sem mensagem de erro')}")
         return None, "❌ Erro no login: " + login_result.get('msg', 'Sem mensagem de erro')
 
     consulta_url = 'https://jcrisco.com.br/logtrack/controllers/consultaPesquisas.php'
@@ -55,8 +44,7 @@ def buscar_dados_viagem(id_pesquisa):
     try:
         consulta_response = session.post(consulta_url, data=consulta_data)
         resultado = consulta_response.json()
-    except Exception as e:
-        print(f"Erro ao consultar a viagem ou resposta inválida: {e}")
+    except:
         return None, "❌ Erro ao consultar a viagem ou resposta inválida."
 
     if not resultado.get('rows'):
@@ -84,8 +72,7 @@ def buscar_dados_viagem(id_pesquisa):
                     'proprietario_cpfcnpj': dados_veiculo.get('proprietario_cpfcnpj', ''),
                     'renavam': dados_veiculo.get('renavan', ''),
                 }
-        except Exception as e:
-            print(f"Erro ao buscar dados para a placa {placa}: {e}")
+        except:
             pass
 
     return {'trip_data': detalhes_da_viagem, 'vehicle_data': dados_veiculos_completos}, None
@@ -97,7 +84,7 @@ def search_data():
 
     if not id_pesquisa:
         return jsonify(formatar_retorno(False, "O parâmetro 'id_pesquisa' é obrigatório.")), 400
-    
+        
     dados, erro = buscar_dados_viagem(id_pesquisa)
     if erro:
         return jsonify(formatar_retorno(False, erro)), 500
@@ -109,17 +96,45 @@ def search_data():
         'vehicle_data': dados['vehicle_data']
     })
 
+# 🚀 Novo: função multiplataforma
 def docx_para_pdf(caminho_docx, caminho_pdf):
-    """
-    Converte um arquivo DOCX para PDF usando o Pandoc.
-    Pandoc precisa estar instalado no ambiente do servidor.
-    """
-    try:
-        subprocess.run(['pandoc', '-o', caminho_pdf, caminho_docx], check=True)
-    except FileNotFoundError:
-        raise RuntimeError("Pandoc não está instalado ou não está no PATH. Instale-o no seu ambiente de deploy.")
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Erro ao converter DOCX para PDF com Pandoc: {e}")
+    sistema = platform.system()
+
+    if sistema == 'Windows':
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        doc = word.Documents.Open(caminho_docx)
+        doc.SaveAs(caminho_pdf, FileFormat=17)  # 17 = wdFormatPDF
+        doc.Close()
+        word.Quit()
+
+    elif sistema in ['Linux', 'Darwin']:  # Darwin = macOS
+        try:
+            subprocess.run([
+                "libreoffice", "--headless", "--convert-to", "pdf", "--outdir",
+                os.path.dirname(caminho_pdf), caminho_docx
+            ], check=True)
+
+            generated_pdf = os.path.join(
+                os.path.dirname(caminho_pdf),
+                os.path.splitext(os.path.basename(caminho_docx))[0] + ".pdf"
+            )
+
+            if not os.path.exists(generated_pdf):
+                raise FileNotFoundError("PDF não gerado pelo LibreOffice.")
+
+            if generated_pdf != caminho_pdf:
+                os.rename(generated_pdf, caminho_pdf)
+
+        except Exception as e:
+            raise RuntimeError(f"Erro ao converter DOCX para PDF no Linux/macOS: {e}")
+
+    else:
+        raise OSError("Sistema operacional não suportado para conversão DOCX → PDF.")
 
 @app.route('/generate_docs', methods=['POST'])
 def generate_docs():
@@ -129,11 +144,11 @@ def generate_docs():
 
     if not id_pesquisa:
         return jsonify(formatar_retorno(False, "O parâmetro 'id_pesquisa' é obrigatório.")), 400
-    
+        
     dados, erro = buscar_dados_viagem(id_pesquisa)
     if erro:
         return jsonify(formatar_retorno(False, erro)), 500
-    
+        
     detalhes_da_viagem = dados['trip_data']
     dados_veiculos_completos = dados['vehicle_data']
 
@@ -165,8 +180,7 @@ def generate_docs():
                         selecionou_motorista = True
                     elif item.startswith("Placa:"):
                         placas_selecionadas.append(item.split(': ')[1])
-        except Exception as e:
-            print(f"Erro na entrada de escolha: {e}")
+        except:
             return jsonify(formatar_retorno(False, "❌ Entrada inválida. Digite números separados por vírgula.")), 400
 
     if not selecionou_motorista and not placas_selecionadas:
@@ -177,21 +191,18 @@ def generate_docs():
     n_veiculos = len(placas_selecionadas)
     if selecionou_motorista:
         if n_veiculos == 0:
-            caminho_modelo = "TIMBRADA - (01) MOTORISTA.docx"
+            caminho_modelo = "cartas_timbradas/TIMBRADA - (01) MOTORISTA.docx"
         elif n_veiculos == 1:
-            caminho_modelo = "TIMBRADA - (01)_MOTORISTA (01)_VEICULO.docx"
+            caminho_modelo = "cartas_timbradas/TIMBRADA - (01)_MOTORISTA (01)_VEICULO.docx"
         else:
-            caminho_modelo = "TIMBRADA - (01)_MOTORISTA (02)_VEICULOS.docx"
+            caminho_modelo = "cartas_timbradas/TIMBRADA - (01)_MOTORISTA (02)_VEICULOS.docx"
     else:
         if n_veiculos == 1:
-            caminho_modelo = "TIMBRADA - (01) VEICULO.docx"
+            caminho_modelo = "cartas_timbradas/TIMBRADA - (01) VEICULO.docx"
         elif n_veiculos > 1:
-            caminho_modelo = "TIMBRADA - (02) VEICULOS.docx"
-            
-    caminho_completo_modelo = os.path.join(template_dir, caminho_modelo)
+            caminho_modelo = "cartas_timbradas/TIMBRADA - (02) VEICULOS.docx"
 
-    if not os.path.exists(caminho_completo_modelo):
-        print(f"Modelo '{caminho_completo_modelo}' não encontrado.")
+    if not os.path.exists(caminho_modelo):
         return jsonify(formatar_retorno(False,f"Modelo '{caminho_modelo}' não encontrado.")),500
 
     # Preparar contexto
@@ -235,36 +246,29 @@ def generate_docs():
     contexto['validade'] = re.search(r'\d{2}/\d{2}/\d{4}', validade).group(0) if validade else ''
     contexto['data_pesquisa'] = re.search(r'\d{2}/\d{2}/\d{4}', consulta_data).group(0) if consulta_data else ''
 
-    # Cria um diretório temporário para os arquivos
-    temp_dir = 'temp_docs'
-    os.makedirs(temp_dir, exist_ok=True)
-
     # Nome do arquivo
-    nome_base = f"Ficha de liberacao {id_pesquisa}"
+    nome_base = f"Ficha de liberação {id_pesquisa}"
     if n_veiculos > 0 and n_veiculos < len(placas_disponiveis):
         nome_base += "_" + "_".join(placas_selecionadas)
 
-    caminho_docx_temporario = os.path.join(temp_dir, f"{nome_base}.docx")
-    caminho_pdf_temporario = os.path.join(temp_dir, f"{nome_base}.pdf")
+    os.makedirs(pasta_de_saida, exist_ok=True)
+    caminho_docx = os.path.join(pasta_de_saida,f"{nome_base}.docx")
+    caminho_pdf = os.path.join(pasta_de_saida,f"{nome_base}.pdf")
 
     try:
-        doc = DocxTemplate(caminho_completo_modelo)
+        doc = DocxTemplate(caminho_modelo)
         doc.render(contexto)
-        doc.save(caminho_docx_temporario)
+        doc.save(caminho_docx)
 
-        # Converte para PDF
-        docx_para_pdf(caminho_docx_temporario, caminho_pdf_temporario)
-        
-        # Envia o arquivo e depois o remove para liberar espaço
-        response = send_file(caminho_pdf_temporario, as_attachment=True)
-        return response
+        docx_para_pdf(caminho_docx, caminho_pdf)
+
+        # Remove DOCX se quiser
+        os.remove(caminho_docx)
+
+        return send_file(caminho_pdf, as_attachment=True)
 
     except Exception as e:
-        print(f"❌ Erro na geração do documento: {e}")
         return jsonify(formatar_retorno(False,f"❌ Ocorreu um erro ao processar o documento: {e}")),500
-    finally:
-        # Limpa o diretório temporário
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 if __name__ == '__main__':
     app.run(debug=True)
