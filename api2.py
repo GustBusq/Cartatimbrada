@@ -14,8 +14,8 @@ app = Flask(__name__)
 from flask_cors import CORS
 CORS(app)
 
-home_dir = os.path.expanduser('~')
-pasta_de_saida = os.path.join(home_dir, "Downloads", "cartas timbradas feitas")
+# Alterado para pasta local no projeto (garante permissão de escrita no ambiente do Render)
+pasta_de_saida = os.path.join(os.getcwd(), "cartas_timbradas_feitas")
 
 def formatar_retorno(sucesso, msg):
     return {'success': sucesso, 'message': msg}
@@ -96,7 +96,7 @@ def search_data():
         'vehicle_data': dados['vehicle_data']
     })
 
-# 🚀 Novo: função multiplataforma
+# 🚀 Novo: função multiplataforma para converter docx em pdf
 def docx_para_pdf(caminho_docx, caminho_pdf):
     sistema = platform.system()
 
@@ -271,4 +271,6 @@ def generate_docs():
         return jsonify(formatar_retorno(False,f"❌ Ocorreu um erro ao processar o documento: {e}")),500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
